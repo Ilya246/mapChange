@@ -1,7 +1,7 @@
 {
   "name": "map change",
-  "author": "[USMP]Ilya246",
+  "author": "[USMP]Ilya246, [USMP]Даркнесс as contributor",
   "main": "mapChange.mapChange",
   "description": "Allows players to vote to override next map and vote to gameover.",
-  "version": 1.0
+  "version": 1.1
 }

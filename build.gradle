@@ -12,7 +12,7 @@ repositories{
 }
 
 dependencies{
-    def version = "v131"
+    def version = "v133"
     compileOnly "com.github.Anuken.Arc:arc-core:$version"
     compileOnly "com.github.Anuken.Mindustry:core:$version"
     compileOnly "com.github.Anuken.Mindustry:server:$version"
