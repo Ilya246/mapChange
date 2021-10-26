@@ -17,9 +17,9 @@ import mindustry.maps.Map;
 import mindustry.mod.Plugin;
 import mindustry.server.ServerControl;
 
-import static mindustry.Vars.maps;
+import static mindustry.Vars.*;
 
-public final class mapChange extends Plugin{
+public class mapChange extends Plugin{
     public Map currentlyVoting = null;
     public int currectSelectVotes = 0;
     public float selectVoteFraction = 0.6f;
@@ -51,7 +51,7 @@ public final class mapChange extends Plugin{
                     StringBuilder builder = new StringBuilder();
                     builder.append("[orange]Maps: \n");
                     int id = 0;
-                    for(Map m : maps.customMaps()){
+                    for(Map m : maps.all()){
                         builder.append("[accent]id:").append(id).append("[white] ").append(m.name()).append(" ");
                         id++;
                     }
@@ -61,7 +61,7 @@ public final class mapChange extends Plugin{
                 Map found;
                 if(args[0].startsWith("#") && Strings.canParseInt(args[0].substring(1))){
                     int id = Strings.parseInt(args[0].substring(1));
-                    found = maps.customMaps().get(id);
+                    found = maps.all().get(id);
                 }else{
                     found = findMap(args[0]);
                 }
@@ -141,6 +141,6 @@ public final class mapChange extends Plugin{
     }
 
     public Map findMap(String mapName){
-        return maps.customMaps().find(map -> Strings.stripColors(map.name().replace('_', ' ')).equalsIgnoreCase(Strings.stripColors(mapName).replace('_', ' ')));
+        return maps.all().find(map -> Strings.stripColors(map.name().replace('_', ' ')).equalsIgnoreCase(Strings.stripColors(mapName).replace('_', ' ')));
     }
 }
