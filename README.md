@@ -1,3 +1,7 @@
-# routerSnake
-This plugin adds router snakes to your server each game, amount depending on map size. They will roam around and follow/heal players, also healing buildings they pass over.
-Snakes can also eat routers, growing in length or even spawning more snakes.
+# mapChange
+A plugin which adds a variety of commands which let players vote to skip the current map and select the next map to be played.
+# Client commands
+`/voteselect` - initiates a vote to select a specified map to be played after the current game is over.
+`/voteskip` - initiates a vote to end the current game.
+# Server commands
+`/mapchangeconfig` - lets you configure various values related to the client commands.
