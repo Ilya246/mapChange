@@ -16,18 +16,17 @@ import static mindustry.Vars.*;
 public class mapChange extends Plugin{
     public Map currentlyVoting = null;
     public int currectSelectVotes = 0;
-    public Timer.Task selectVoteTask = null;
-    public Seq<String> selectVoted = new Seq<>(); // UUIDs of players that voted
+    public Vote skipVote = null;
+    public Vote selectVote = null;
 
-    public int currentSkipVotes = 0;
-    public ObjectMap<String, Boolean> skipVoted = new ObjectMap<>(); // UUIDs of players that voted mapped to their vote
+    public static String configPrefix = "map-";
 
     public enum Config{
-        selectVoteFraction("The fraction of players that need to vote for map selection.", 0.4f),
-        selectVoteLength("The length, in seconds, of a map selection vote.", 30f),
+        selectVoteFraction("The fraction of players that need to vote for map selection.", 0.35f),
+        selectVoteLength("The length, in seconds, of a map selection vote.", 45f),
         allowBuiltinMaps("Whether to allow built-in maps in selection votes.", true),
-        skipVoteFraction("The fraction of players that need to vote to skip the current map.", 0.5f),
-        skipVoteLength("The length, in seconds, of a map skip vote.", 40f);
+        skipVoteFraction("The fraction of players that need to vote to skip the current map.", 0.45f),
+        skipVoteLength("The length, in seconds, of a map skip vote.", 60f);
 
         public static final Config[] all = values();
 
@@ -38,133 +37,120 @@ public class mapChange extends Plugin{
             this.description = description;
             this.defaultValue = value;
         }
-        public float f(){
-            return Core.settings.getFloat(name(), (float)defaultValue);
+        public String getName(){
+            return configPrefix + name();
         }
         public boolean b(){
-            return Core.settings.getBool(name(), (boolean)defaultValue);
+            return Core.settings.getBool(getName(), (boolean)defaultValue);
+        }
+        public float f(){
+            return Core.settings.getFloat(getName(), (float)defaultValue);
         }
         public String s(){
-            return Core.settings.get(name(), defaultValue).toString();
+            return Core.settings.get(getName(), defaultValue).toString();
         }
         public void set(Object value){
-            Core.settings.put(name(), value);
+            Core.settings.put(getName(), value);
+        }
+    }
+
+    public class Vote{
+        public ObjectMap<String, Boolean> voted = new ObjectMap<>();
+        public Timer.Task task;
+        public Object voteObject;
+
+        public Vote(Timer.Task task){
+            this.task = task;
+        }
+        public Vote(Timer.Task task, Object voteObject){
+            this.task = task;
+            this.voteObject = voteObject;
+        }
+        public int votes(){
+            int val = 0;
+            for(boolean v : voted.values()){
+                val += v ? 1 : -1;
+            }
+            return val;
         }
     }
 
     public void registerClientCommands(CommandHandler handler){
-        handler.<Player>register("voteselect", "[name...]", "Vote to change the next map to be played, specified by name or #id. Does not end the game. Use without arguments to display maplist.", (args, player) -> {
-            try{
-                if(currentlyVoting != null){
-                    if(args[0].equalsIgnoreCase("yes") || args[0].equalsIgnoreCase("y")){
-                        if(selectVoted.contains(player.uuid())){
-                            player.sendMessage("[scarlet]You can't vote twice.");
-                        }else{
-                            voteSelect(player);
-                        }
-                    }else{
-                        player.sendMessage("[scarlet]A vote is already in progress.");
-                    }
-                    return;
+        handler.<Player>register("voteselect", "[y/n/name...]", "Vote to change the next map to be played, specified by name or #id. Does not end the game. Use without arguments to display maplist.", (args, player) -> {
+            if(args.length == 0){
+                StringBuilder builder = new StringBuilder();
+                builder.append("[orange]Maps: \n");
+                int id = 0;
+                for(Map m : availableMaps()){
+                    builder.append("[accent]id:").append(id).append("[white] ").append(m.name()).append(" ");
+                    id++;
                 }
-                if(args.length == 0){
-                    StringBuilder builder = new StringBuilder();
-                    builder.append("[orange]Maps: \n");
-                    int id = 0;
-                    for(Map m : availableMaps()){
-                        builder.append("[accent]id:").append(id).append("[white] ").append(m.name()).append(" ");
-                        id++;
-                    }
-                    player.sendMessage(builder.toString());
-                    return;
-                }
-                Map found;
-                if(args[0].startsWith("#") && Strings.canParseInt(args[0].substring(1))){
-                    int id = Strings.parseInt(args[0].substring(1));
-                    found = availableMaps().get(id);
-                }else{
-                    found = findMap(args[0]);
-                }
-                if(found == null){
-                    player.sendMessage("[scarlet]No map [orange]'" + args[0] + "'[scarlet] found.");
-                    return;
-                }
-                currentlyVoting = found;
-                voteSelect(player);
-                selectVoteTask = Timer.schedule(() -> {
-                    Call.sendMessage("[scarlet]Next map override vote failed.");
-                    currentlyVoting = null;
-                    selectVoted.clear();
-                    currectSelectVotes = 0;
-                }, Config.selectVoteLength.f());
-            }catch(Exception badArguments){
-                player.sendMessage("[scarlet]Something went wrong. Please check command arguments.");
+                builder.append("\n[accent]Example usage: [lightgray]/voteselect #5");
+                player.sendMessage(builder.toString());
+                return;
             }
-        });
-        handler.<Player>register("voteskip", "<y/n>","Vote to skip the current map.", (args, player) -> {
-            if(args[0].equalsIgnoreCase("y") || args[0].equalsIgnoreCase("yes")){
-                voteSkip(player, true);
-            }else if(args[0].equalsIgnoreCase("n") || args[0].equalsIgnoreCase("no")){
-                voteSkip(player, false);
-            }else{
-                player.sendMessage("[scarlet]Voteskip only accepts 'y' (yes) or 'n' (no) as arguments.");
+            if(selectVote != null){
+                boolean vote = !(args[0].equalsIgnoreCase("no") || args[0].equalsIgnoreCase("n"));
+                if(selectVote.voted.containsKey(player.uuid()) && selectVote.voted.get(player.uuid()) == vote){
+                    player.sendMessage("[scarlet]You can't vote twice.");
+                    return;
+                }
+                selectVote.voted.put(player.uuid(), vote);
+                Call.sendMessage(player.coloredName() + " [lightgray]has voted to select " + ((Map)selectVote.voteObject).name() + " [lightgray]as the next map (" + selectVote.votes() + "/" + selectVoteCap() + "). Use '/voteselect [y/n]' to vote. This does not end the game.");
+                return;
             }
-        });
-    }
-
-    public void voteSelect(Player player){
-        selectVoted.add(player.uuid());
-        currectSelectVotes++;
-        int voteCap = (int)Math.ceil((float)Groups.player.size() * Config.selectVoteFraction.f());
-        Call.sendMessage(player.coloredName() + " [lightgray]has voted to select " + currentlyVoting.name() + " [lightgray]as the next map (" + currectSelectVotes + "/" + voteCap + "). Type '/voteselect yes' to agree. This does not end the game.");
-        if(currectSelectVotes >= voteCap){
-            Core.app.getListeners().each(lst -> {
-                if(lst instanceof ServerControl){
-                    ServerControl scont = (ServerControl)lst;
-                    Reflect.set(scont, "nextMapOverride", currentlyVoting);
-                }
-            });
-            Call.sendMessage("[accent]Next map overridden to be " + currentlyVoting.name() + "[accent].");
-            currentlyVoting = null;
-            selectVoted.clear();
-            currectSelectVotes = 0;
-            selectVoteTask.cancel();
-        }
-    }
-    public void voteSkip(Player player, boolean agree){
-        int voteCap = (int)Math.ceil((float)Groups.player.size() * Config.skipVoteFraction.f());
-        if(skipVoted.isEmpty()){
-            Timer.schedule(() -> {
-                if(currentSkipVotes < (int)Math.ceil((float)Groups.player.size() * Config.skipVoteFraction.f())){
-                    Call.sendMessage("[scarlet]Map skip vote failed.");
-                }else{
-                    Call.sendMessage("[accent]Map skip vote successful.");
-                    Events.fire(new GameOverEvent(Team.derelict));
-                }
-                skipVoted.clear();
-                currentSkipVotes = 0;
-            }, Config.skipVoteLength.f());
-        }
-        if(skipVoted.containsKey(player.uuid())){
-            if(skipVoted.get(player.uuid()) != agree){
-                currentSkipVotes += agree ? 1 : -1;
-                skipVoted.remove(player.uuid());
-                player.sendMessage("[accent]Swapped vote.");
+            Map found;
+            if(args[0].startsWith("#") && Strings.canParseInt(args[0].substring(1))){
+                int id = Strings.parseInt(args[0].substring(1));
+                found = availableMaps().get(id);
             }else{
+                found = availableMaps().find(map -> Strings.stripColors(map.name().replace('_', ' ')).equalsIgnoreCase(Strings.stripColors(args[0]).replace('_', ' ')));
+            }
+            if(found == null){
+                player.sendMessage("[scarlet]No map [orange]'" + args[0] + "'[scarlet] found.");
+                return;
+            }
+            selectVote = new Vote(
+                Timer.schedule(() -> {
+                    boolean succeeded = selectVote.votes() >= selectVoteCap();
+                    Call.sendMessage(succeeded ? "[accent]Next map override vote successful.\nSwitching next map to " + ((Map)selectVote.voteObject).name() : "[scarlet]Next map override vote failed.");
+                    if(succeeded){
+                        Reflect.set(Core.app.getListeners().find(lst -> lst instanceof ServerControl), "nextMapOverride", (Map)selectVote.voteObject);
+                    }
+                    selectVote = null;
+                },
+            Config.selectVoteLength.f()), found);
+            selectVote.voted.put(player.uuid(), true);
+            Call.sendMessage(player.coloredName() + " [lightgray]has voted to select " + found.name() + " [lightgray]as the next map (1/" + selectVoteCap() + "). Use '/voteselect [y/n]' to vote. This does not end the game.");
+        });
+        handler.<Player>register("voteskip", "[y/n]","Vote to skip the current map. Using without arguments counts as a 'yes' vote.", (args, player) -> {
+            if(skipVote == null){
+                skipVote = new Vote(Timer.schedule(() -> {
+                    boolean succeeded = skipVote.votes() >= skipVoteCap();
+                    Call.sendMessage(succeeded ? "[accent]Map skip vote successful." : "[scarlet]Map skip vote failed.");
+                    if(succeeded){
+                        Events.fire(new GameOverEvent(Team.derelict));
+                    }
+                    skipVote = null;
+                }, Config.skipVoteLength.f()));
+            }
+            boolean vote = args.length == 0 || !(args[0].equalsIgnoreCase("no") || args[0].equalsIgnoreCase("n"));
+            if(skipVote.voted.containsKey(player.uuid()) && skipVote.voted.get(player.uuid()) == vote){
                 player.sendMessage("[scarlet]You can't vote twice.");
                 return;
             }
-        }
-        skipVoted.put(player.uuid(), agree);
-        currentSkipVotes += agree ? 1 : -1;
-        Call.sendMessage(player.coloredName() + " [lightgray]has voted to skip map (" + currentSkipVotes + "/" + voteCap + "). Type '/voteskip y/n' to agree or disagree.");
-    }
-
-    public Map findMap(String mapName){
-        return availableMaps().find(map -> Strings.stripColors(map.name().replace('_', ' ')).equalsIgnoreCase(Strings.stripColors(mapName).replace('_', ' ')));
+            skipVote.voted.put(player.uuid(), vote);
+            Call.sendMessage(player.coloredName() + " [lightgray]has voted to skip the current map (" + skipVote.votes() + "/" + skipVoteCap() + "). Use '/voteskip [y/n]' to vote.");
+        });
     }
     public Seq<Map> availableMaps(){
         return Config.allowBuiltinMaps.b() ? maps.all() : maps.customMaps();
+    }
+    public int selectVoteCap(){
+        return (int)(Groups.player.size() * Config.selectVoteFraction.f());
+    }
+    public int skipVoteCap(){
+        return (int)(Groups.player.size() * Config.skipVoteFraction.f());
     }
 
     public void registerServerCommands(CommandHandler handler){
