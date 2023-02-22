@@ -3,5 +3,6 @@
   "author": "[USMP]Ilya246",
   "main": "mapChange.mapChange",
   "description": "Allows players to vote to override next map and vote to gameover. Contributors: [USMP]Даркнесс",
-  "version": 2.0
+  "version": 2.0,
+  "minGameVersion": 142
 }
